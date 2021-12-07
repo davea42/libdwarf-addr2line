@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdbool.h> /* C99 for bool type */
 #include <unistd.h>
+#include <stdbool.h> /* C99 */
 #include <getopt.h>
 #include <err.h>
 #include <sys/types.h>

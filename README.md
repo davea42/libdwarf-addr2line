@@ -3,6 +3,9 @@
 This is a trivial example, the build will
 take some fiddling with the simple Makefile.
 
+This is a version for libdwarf-20210528, before
+semantic versioning.
+
 The code assumes C99 stdbool.h  and
 type 'bool' available for the code to compile.
 
