@@ -264,9 +264,9 @@ dwarf5_ranges( Dwarf_Debug dbg,
     Dwarf_Addr *lowest,
     Dwarf_Addr *highest)
 {
-    printf("DWARF5 rangelists  cannot be done in this "
-       "libdwarf version");
-    return DW_DLV_NO_ENTRY;
+    printf("\nDWARF5 .debug_rnglists cannot be accessed in this "
+       "libdwarf version.\n");
+    exit(1);
 }
 
 static int
