@@ -16,6 +16,8 @@
 #define MAX_ADDR_LEN 20
 #define BATCHMODE_HEURISTIC 100
 
+#define DWARF5_VERSION  5
+
 typedef struct flags {
     bool addresses;
     bool batchmode;
@@ -41,8 +43,10 @@ static void err_handler(Dwarf_Error err, Dwarf_Ptr errarg)
 static bool pc_in_die(Dwarf_Debug dbg, Dwarf_Die die, Dwarf_Addr pc)
 {
     int ret;
-    Dwarf_Addr cu_lowpc = DW_DLV_BADADDR, cu_highpc;
+    Dwarf_Addr cu_lowpc = DW_DLV_BADADDR;
+    Dwarf_Addr cu_highpc = 0;
     enum Dwarf_Form_Class highpc_cls;
+
     ret = dwarf_lowpc(die, &cu_lowpc, NULL);
     if (ret == DW_DLV_OK) {
         if (pc == cu_lowpc) {
@@ -253,7 +257,70 @@ get_pc_range_die(Dwarf_Die die,
     return is_low_set && is_high_set;
 }
 
-static bool get_pc_range(Dwarf_Debug dbg,
+static int
+dwarf5_ranges( Dwarf_Debug dbg, 
+    Dwarf_Die cu_die,
+    Dwarf_Addr cu_lowpc,
+    Dwarf_Addr *lowest,
+    Dwarf_Addr *highest)
+{
+    printf("DWARF5 rangelists  cannot be done in this "
+       "libdwarf version");
+    return DW_DLV_NO_ENTRY;
+}
+
+static int
+dwarf4_ranges( Dwarf_Debug dbg, 
+    Dwarf_Die cu_die,
+    Dwarf_Addr cu_lowpc,
+    Dwarf_Addr *lowest,
+    Dwarf_Addr *highest)
+{
+    Dwarf_Unsigned offset;
+    Dwarf_Attribute attr = 0;
+    int res = 0;
+
+    res = dwarf_attr(cu_die, DW_AT_ranges, &attr, NULL);
+    if (res != DW_DLV_OK) {
+        return res;
+    }
+    if (dwarf_global_formref(attr, &offset, NULL) == DW_DLV_OK) {
+        Dwarf_Signed count = 0;
+        Dwarf_Ranges *ranges = 0;
+        Dwarf_Addr baseaddr = 0;
+        if (cu_lowpc != DW_DLV_BADADDR) {
+            baseaddr = cu_lowpc;
+        }
+        res = dwarf_get_ranges_b(dbg, offset, cu_die,
+            NULL, &ranges, &count, NULL, NULL);
+        for (int i = 0; i < count; i++) {
+            Dwarf_Ranges *cur = ranges + i;
+            if (cur->dwr_type == DW_RANGES_ENTRY) {
+                Dwarf_Addr rng_lowpc, rng_highpc;
+                rng_lowpc = baseaddr + cur->dwr_addr1;
+                rng_highpc = baseaddr + cur->dwr_addr2;
+                if (rng_lowpc < *lowest) {
+                    *lowest = rng_lowpc;
+                }
+                if (rng_highpc > *highest) {
+                    *highest = rng_highpc;
+                }
+            } else if (cur->dwr_type ==
+                DW_RANGES_ADDRESS_SELECTION) {
+                baseaddr = cur->dwr_addr2;
+            } else {  // DW_RANGES_END
+                baseaddr = cu_lowpc;
+            }
+        }
+        dwarf_ranges_dealloc(dbg, ranges, count);
+    }
+    dwarf_dealloc(dbg, attr, DW_DLA_ATTR);
+    return DW_DLV_OK;
+}
+
+
+static bool
+get_pc_range(Dwarf_Debug dbg,
     Dwarf_Addr *lowest,
     Dwarf_Addr *highest,
     int *cu_cnt)
@@ -261,6 +328,8 @@ static bool get_pc_range(Dwarf_Debug dbg,
     Dwarf_Bool is_info = true;
     Dwarf_Unsigned next_cu_header;
     Dwarf_Half header_cu_type;
+    Dwarf_Half dwversion = 0;
+    Dwarf_Half offset_size = 0;
     *lowest = DW_DLV_BADADDR;
     *highest = 0;
     int ret, cu_i;
@@ -274,8 +343,12 @@ static bool get_pc_range(Dwarf_Debug dbg,
         Dwarf_Die cu_die = 0;
         ret = dwarf_siblingof_b(dbg, 0, is_info, &cu_die, NULL);
         if (ret == DW_DLV_OK) {
-            Dwarf_Addr cu_lowpc = DW_DLV_BADADDR, cu_highpc;
+            Dwarf_Addr cu_lowpc = DW_DLV_BADADDR;
+            Dwarf_Addr cu_highpc = 0;
             enum Dwarf_Form_Class highpc_cls;
+            
+            dwarf_get_version_of_die(cu_die,&dwversion,&offset_size);
+
             ret = dwarf_lowpc(cu_die, &cu_lowpc, NULL);
             if (ret == DW_DLV_OK) {
                 if (cu_lowpc < *lowest) {
@@ -292,43 +365,13 @@ static bool get_pc_range(Dwarf_Debug dbg,
                     }
                 }
             }
-            Dwarf_Attribute attr;
-            if (dwarf_attr(cu_die, DW_AT_ranges, &attr, NULL) ==
-                DW_DLV_OK) {
-                Dwarf_Unsigned offset;
-                if (dwarf_global_formref(attr, &offset, NULL) ==
-                    DW_DLV_OK) {
-                    Dwarf_Signed count = 0;
-                    Dwarf_Ranges *ranges = 0;
-                    Dwarf_Addr baseaddr = 0;
-                    if (cu_lowpc != DW_DLV_BADADDR) { 
-                        baseaddr = cu_lowpc;
-                    }
-                    /*  This is for DWARF 2,3,4. Not DWARF5  */
-                    ret = dwarf_get_ranges_b(dbg, offset, cu_die,
-                        NULL, &ranges, &count, NULL, NULL);
-                    for (int i = 0; i < count; i++) {
-                        Dwarf_Ranges *cur = ranges + i;
-                        if (cur->dwr_type == DW_RANGES_ENTRY) {
-                            Dwarf_Addr rng_lowpc, rng_highpc;
-                            rng_lowpc = baseaddr + cur->dwr_addr1;
-                            rng_highpc = baseaddr + cur->dwr_addr2;
-                            if (rng_lowpc < *lowest) {
-                                *lowest = rng_lowpc;
-                            }
-                            if (rng_highpc > *highest) {
-                                *highest = rng_highpc;
-                            }
-                        } else if (cur->dwr_type ==
-                            DW_RANGES_ADDRESS_SELECTION) {
-                            baseaddr = cur->dwr_addr2;
-                        } else {  // DW_RANGES_END
-                            baseaddr = cu_lowpc;
-                        }
-                    }
-                    dwarf_ranges_dealloc(dbg, ranges, count);
-                }
-                dwarf_dealloc(dbg, attr, DW_DLA_ATTR);
+            if (dwversion >= DWARF5_VERSION) {
+                ret = dwarf5_ranges(dbg,cu_die,cu_lowpc,lowest,highest); 
+            } else {
+                ret = dwarf4_ranges(dbg,cu_die,cu_lowpc,lowest,highest); 
+            }
+            if (ret == DW_DLV_ERROR) {
+                return 0;
             }
             dwarf_dealloc(dbg, cu_die, DW_DLA_DIE);
             cu_die = 0;
@@ -388,7 +431,8 @@ populate_lookup_table_die(Dwarf_Debug dbg,
     }
 }
 
-static void populate_lookup_table(Dwarf_Debug dbg,
+static void
+populate_lookup_table(Dwarf_Debug dbg,
     lookup_tableT *lookup_table)
 {
     Dwarf_Bool is_info = true;
