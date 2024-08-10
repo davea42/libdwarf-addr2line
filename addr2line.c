@@ -308,7 +308,10 @@ dwarf5_ranges(Dwarf_Die cu_die,
         Dwarf_Rnglists_Head head = 0;
 
         dwarf_whatform(attr,&attrform,NULL);
-        /* offset is in .debug_rnglists */
+        /* offset either a global offset (FORM == DW_FORM_sec_offset)
+            or an index into .debug_rnglists
+            FORM = DW_FORM_rnglistx. The following call takes care
+            of the details */
         res = dwarf_rnglists_get_rle_head(attr, attrform,offset,
             &head,
             &rnglists_count,&rlesetoffset,NULL);

@@ -6,7 +6,8 @@ A build will take a little fiddling with the simple Makefile.
 See the comments in the Makefile.
 
 I hope to get in touch with the original author
-(github name Crablicious) by email, but have been
+(github name Crablicious) by email to clarify
+the copyright status of Crablicious' code, but have been
 unable to make contact so far.
 
 The batch no-batch options have very different code paths.
